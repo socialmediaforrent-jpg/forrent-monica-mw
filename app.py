@@ -11,7 +11,7 @@ SYS=gzip.decompress(base64.b64decode(os.environ['MONICA_PROMPT_GZ_B64'])).decode
 SCH={"type":"object","additionalProperties":False,"required":["reply","nombre","whatsapp","tipo_lead","propiedad","handoff"],"properties":{"reply":{"type":"string"},"nombre":{"type":"string"},"whatsapp":{"type":"string"},"tipo_lead":{"type":"string","enum":["","Visita","Búsqueda","Captación","Colega"]},"propiedad":{"type":"string"},"handoff":{"type":"boolean"}}}
 COLEGA=re.compile(r'colega|asesor[a]? inmobiliari|agente inmobiliari|inmobiliaria\b(?! for rent)|profesional inmobiliari|corredor|realtor|broker|group\b',re.I)
 DUENO=re.compile(r'\bmi (apartamento|apto|casa|local|oficina|inmueble|propiedad|terreno|galp[oó]n)|\b(vendo|alquilo|estoy (vendiendo|alquilando))\b|soy (el |la )?(due[ñn]o|propietari)',re.I)
-TEL=re.compile(r'\+?\d[\d \-().]{7,}\d')
+TEL=re.compile(r'(?<![\w-])(?:\+?58[\s\-.]?)?\(?0?(?:4\d{2}|2\d{2})\)?[\s\-.]?\d{3}[\s\-.]?\d{2}[\s\-.]?\d{2}(?!\d)')
 def corregir(j,texto):
     t=j.get('tipo_lead','')
     if t=='Colega' and not COLEGA.search(texto): t=''
