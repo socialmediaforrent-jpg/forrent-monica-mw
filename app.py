@@ -35,12 +35,36 @@ def pensar(d):
 def mc(path,body):
     r=requests.post('https://api.manychat.com'+path,headers={'Authorization':'Bearer '+MC},json=body,timeout=20)
     logging.info('manychat %s -> %s %s',path,r.status_code,r.text[:300]); return r
+HFILE='/tmp/monica_hist.json'
+try: HIST=json.load(open(HFILE))
+except Exception: HIST={}
+HLOCK=threading.Lock()
+def limpio(v): v=(v or '').strip(); return '' if '{{' in v else v
+def info(sid):
+    r=requests.get('https://api.manychat.com/fb/subscriber/getInfo',params={'subscriber_id':sid},headers={'Authorization':'Bearer '+MC},timeout=20)
+    return (r.json() or {}).get('data') or {}
+def enviar(sid,canal,texto):
+    tipo='whatsapp' if canal=='whatsapp' else 'instagram'
+    r=mc('/fb/sending/sendContent',{"subscriber_id":sid,"data":{"version":"v2","content":{"type":tipo,"messages":[{"type":"text","text":texto}]}}})
+    ok=r.status_code==200 and (r.json() or {}).get('status')=='success'
+    if not ok and FLOW_NS: mc('/fb/sending/sendFlow',{"subscriber_id":sid,"flow_ns":FLOW_NS})
 def work(d):
     try:
-        j,_=pensar(d); sid=int(d['contact_id'])
+        sid=int(d['contact_id']); inf=info(sid)
+        if 'tester_monica' not in [t.get('name') for t in inf.get('tags',[])]:
+            logging.info('sin tag tester_monica: %s',sid); return
+        d['mensaje']=limpio(d.get('mensaje')) or (inf.get('last_input_text') or '')
+        d['nombre']=limpio(d.get('nombre')) or inf.get('name') or ''
+        with HLOCK: d['historial']=HIST.get(str(sid),'') or limpio(d.get('historial'))
+        if not d['mensaje']: logging.info('sin mensaje: %s',sid); return
+        j,_=pensar(d)
+        with HLOCK:
+            HIST[str(sid)]=j['_historial']
+            try: json.dump(HIST,open(HFILE,'w'))
+            except Exception: pass
         f=[("monica_respuesta",j['reply']),("monica_historial",j['_historial']),("Nombre_Apellido",j['nombre']),("WhatsApp_Cliente",j['whatsapp']),("Tipo_Lead",j['tipo_lead']),("Propiedad",j['propiedad']),("monica_handoff","si" if j['handoff'] else "no")]
         mc('/fb/subscriber/setCustomFields',{"subscriber_id":sid,"fields":[{"field_name":k,"field_value":v} for k,v in f if v]})
-        if FLOW_NS: mc('/fb/sending/sendFlow',{"subscriber_id":sid,"flow_ns":FLOW_NS})
+        enviar(sid,d.get('canal','instagram'),j['reply'])
     except Exception as e: logging.exception('work error: %s',e)
 app=Flask(__name__)
 @app.post('/monica')
