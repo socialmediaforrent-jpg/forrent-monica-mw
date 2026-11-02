@@ -34,7 +34,7 @@ def pensar(d):
     return j,u
 def mc(path,body):
     r=requests.post('https://api.manychat.com'+path,headers={'Authorization':'Bearer '+MC},json=body,timeout=20)
-    logging.info('manychat %s -> %s',path,r.status_code); return r
+    logging.info('manychat %s -> %s %s',path,r.status_code,r.text[:300]); return r
 def work(d):
     try:
         j,_=pensar(d); sid=int(d['contact_id'])
