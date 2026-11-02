@@ -12,6 +12,10 @@ SCH={"type":"object","additionalProperties":False,"required":["reply","nombre","
 COLEGA=re.compile(r'colega|asesor[a]? inmobiliari|agente inmobiliari|inmobiliaria\b(?! for rent)|profesional inmobiliari|corredor|realtor|broker|group\b',re.I)
 DUENO=re.compile(r'\bmi (apartamento|apto|casa|local|oficina|inmueble|propiedad|terreno|galp[oó]n)|\b(vendo|alquilo|estoy (vendiendo|alquilando))\b|soy (el |la )?(due[ñn]o|propietari)',re.I)
 TEL=re.compile(r'(?<![\w-])(?:\+?58[\s\-.]?)?\(?0?(?:4\d{2}|2\d{2})\)?[\s\-.]?\d{3}[\s\-.]?\d{2}[\s\-.]?\d{2}(?!\d)')
+COD=re.compile(r'\s*\(?\s*(?:con|incluyendo|y)?\s*(?:el\s+)?c[oó]digo\s+de\s+(?:[aá]rea|pa[ií]s)(?:\s+y\s+(?:de\s+)?(?:[aá]rea|pa[ií]s))?(?:\s*\((?:ej\.?|por ejemplo)[^)]*\))?\s*\)?',re.I)
+def sin_codigo(t):
+    t=COD.sub('',t); t=re.sub(r'\s*\((?:ej\.?|por ejemplo)\s*\+?58[^)]*\)','',t,flags=re.I)
+    return re.sub(r'\s+([?.,;!])',r'\1',re.sub(r'  +',' ',t)).strip()
 def corregir(j,texto):
     t=j.get('tipo_lead','')
     if t=='Colega' and not COLEGA.search(texto): t=''
@@ -20,6 +24,7 @@ def corregir(j,texto):
     j['tipo_lead']=t
     j['reply']=TEL.sub('tu número',j.get('reply',''))[:1000]   # nunca teléfonos en la respuesta
     j['reply']=re.sub(r'https?://(?!(www\.)?grupoinmobiliarioforrent\.com|(\w+\.)?mercadolibre\.com\.ve)\S+','',j['reply'])
+    j['reply']=sin_codigo(j['reply'])
     return j
 def pensar(d):
     hist=(d.get('historial') or '')[-4000:]
