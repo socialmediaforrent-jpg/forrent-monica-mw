@@ -53,21 +53,36 @@ def enviar(sid,canal,texto):
     r=mc('/fb/sending/sendContent',{"subscriber_id":sid,"data":{"version":"v2","content":{"type":tipo,"messages":[{"type":"text","text":texto}]}}})
     ok=r.status_code==200 and (r.json() or {}).get('status')=='success'
     if not ok and FLOW_NS: mc('/fb/sending/sendFlow',{"subscriber_id":sid,"flow_ns":FLOW_NS})
+def campo(inf,n):
+    for f in inf.get('custom_fields',[]):
+        if f.get('name')==n: return f.get('value') or ''
+    return ''
+def leer_hist(sid,inf):
+    with HLOCK: h=HIST.get(str(sid),'')
+    m=limpio(campo(inf,'monica_memoria'))
+    return m if len(m)>=len(h) else h
+def guardar_hist(sid,h):
+    with HLOCK:
+        HIST[str(sid)]=h
+        try: json.dump(HIST,open(HFILE,'w'))
+        except Exception: pass
+    mc('/fb/subscriber/setCustomFieldByName',{"subscriber_id":sid,"field_name":"monica_memoria","field_value":h})
+def turno(d,sid,inf):
+    d['mensaje']=limpio(d.get('mensaje')) or (inf.get('last_input_text') or '')
+    d['mensaje']=re.sub(r'(?i)\bmonicatest2026\b','',d['mensaje']).strip()
+    d['nombre']=limpio(d.get('nombre')) or inf.get('name') or ''
+    d['historial']=leer_hist(sid,inf)
+    if not d['mensaje']: return None
+    j,u=pensar(d); guardar_hist(sid,j['_historial']); return j,u
 def work(d):
     try:
         sid=int(d['contact_id']); inf=info(sid)
         if 'tester_monica' not in [t.get('name') for t in inf.get('tags',[])]:
             logging.info('sin tag tester_monica: %s',sid); return
-        d['mensaje']=limpio(d.get('mensaje')) or (inf.get('last_input_text') or '')
-        d['nombre']=limpio(d.get('nombre')) or inf.get('name') or ''
-        with HLOCK: d['historial']=HIST.get(str(sid),'') or limpio(d.get('historial'))
-        if not d['mensaje']: logging.info('sin mensaje: %s',sid); return
-        j,_=pensar(d)
-        with HLOCK:
-            HIST[str(sid)]=j['_historial']
-            try: json.dump(HIST,open(HFILE,'w'))
-            except Exception: pass
-        f=[("monica_respuesta",j['reply']),("monica_historial",j['_historial']),("Nombre_Apellido",j['nombre']),("WhatsApp_Cliente",j['whatsapp']),("Tipo_Lead",j['tipo_lead']),("Propiedad",j['propiedad']),("monica_handoff","si" if j['handoff'] else "no")]
+        r=turno(d,sid,inf)
+        if not r: logging.info('sin mensaje: %s',sid); return
+        j,_=r
+        f=[("monica_respuesta",j['reply']),("Nombre_Apellido",j['nombre']),("WhatsApp_Cliente",j['whatsapp']),("Tipo_Lead",j['tipo_lead']),("Propiedad",j['propiedad']),("monica_handoff","si" if j['handoff'] else "no")]
         mc('/fb/subscriber/setCustomFields',{"subscriber_id":sid,"fields":[{"field_name":k,"field_value":v} for k,v in f if v]})
         enviar(sid,d.get('canal','instagram'),j['reply'])
     except Exception as e: logging.exception('work error: %s',e)
@@ -76,8 +91,13 @@ app=Flask(__name__)
 def monica():
     if request.headers.get('X-Monica-Secret')!=SECRET: return jsonify(ok=False,error='secret'),403
     d=request.get_json(force=True,silent=True) or {}
-    if d.get('dry_run'):   # prueba sin ManyChat: responde la respuesta en línea
-        j,u=pensar(d); j.pop('_historial',None); return jsonify(ok=True,**j,usage=u)
+    if d.get('dry_run'):   # prueba: NO envía mensajes. Con contact_id usa y guarda la memoria del contacto tester.
+        if d.get('contact_id'):
+            sid=int(d['contact_id']); inf=info(sid)
+            if 'tester_monica' not in [t.get('name') for t in inf.get('tags',[])]: return jsonify(ok=False,error='solo tester_monica')
+            j,u=turno(d,sid,inf)
+        else: j,u=pensar(d)
+        h=j.pop('_historial',None); return jsonify(ok=True,**j,usage=u,historial=h)
     if d.get('tag')!='tester_monica': return jsonify(ok=False,error='solo tester_monica'),200
     if ALLOWED and str(d.get('contact_id')) not in ALLOWED: return jsonify(ok=False,error='contacto no permitido'),200
     threading.Thread(target=work,args=(d,),daemon=True).start()
